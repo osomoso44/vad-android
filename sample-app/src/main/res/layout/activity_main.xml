@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- Status Display -->
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Status: Stopped"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:padding="16dp"
+            android:background="#E3F2FD"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Speech Detection Indicator -->
+        <TextView
+            android:id="@+id/speechIndicator"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Speech: No"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:padding="8dp"
+            android:background="#FFF3E0"
+            app:layout_constraintTop_toBottomOf="@id/statusText" />
+
+        <!-- Timing Information -->
+        <LinearLayout
+            android:id="@+id/timingLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="8dp"
+            app:layout_constraintTop_toBottomOf="@id/speechIndicator">
+
+            <TextView
+                android:id="@+id/silenceTimeText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Silence Time: 0ms"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/recordingTimeText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Recording Time: 0ms"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- VAD Mode Control -->
+        <TextView
+            android:id="@+id/vadModeLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="VAD Mode:"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:padding="8dp"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/timingLayout"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <Spinner
+            android:id="@+id/vadModeSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:layout_marginTop="8dp"
+            android:padding="12dp"
+            app:layout_constraintTop_toBottomOf="@id/vadModeLabel"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <!-- Silence Duration Control -->
+        <TextView
+            android:id="@+id/silenceDurationLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Silence Duration (ms):"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:padding="8dp"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/vadModeSpinner"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/silenceDurationEdit"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:inputType="number"
+            android:text="5000"
+            android:textSize="16sp"
+            android:padding="12dp"
+            android:layout_marginTop="8dp"
+            app:layout_constraintTop_toBottomOf="@id/silenceDurationLabel"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <!-- Max Recording Duration Control -->
+        <TextView
+            android:id="@+id/maxDurationLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Max Duration (ms):"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:padding="8dp"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/silenceDurationEdit"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/maxDurationEdit"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:inputType="number"
+            android:text="60000"
+            android:textSize="16sp"
+            android:padding="12dp"
+            android:layout_marginTop="8dp"
+            app:layout_constraintTop_toBottomOf="@id/maxDurationLabel"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <!-- Record Speech Only Toggle -->
+        <TextView
+            android:id="@+id/recordSpeechOnlyLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Record Speech Only:"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:padding="8dp"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/maxDurationEdit"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <Switch
+            android:id="@+id/recordSpeechOnlySwitch"
+            android:layout_width="wrap_content"
+            android:layout_height="60dp"
+            android:checked="true"
+            android:text="ON"
+            android:textSize="16sp"
+            android:layout_marginTop="8dp"
+            app:layout_constraintTop_toBottomOf="@id/recordSpeechOnlyLabel"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <!-- VAD Minimum Silence Duration -->
+        <TextView
+            android:id="@+id/vadMinSilenceLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="VAD Min Silence (ms):"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:padding="8dp"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/recordSpeechOnlySwitch"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/vadMinSilenceEdit"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:inputType="number"
+            android:text="300"
+            android:textSize="16sp"
+            android:padding="12dp"
+            android:layout_marginTop="8dp"
+            app:layout_constraintTop_toBottomOf="@id/vadMinSilenceLabel"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <!-- VAD Minimum Speech Duration -->
+        <TextView
+            android:id="@+id/vadMinSpeechLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="VAD Min Speech (ms):"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:padding="8dp"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/vadMinSilenceEdit"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <EditText
+            android:id="@+id/vadMinSpeechEdit"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:inputType="number"
+            android:text="30"
+            android:textSize="16sp"
+            android:padding="12dp"
+            android:layout_marginTop="8dp"
+            app:layout_constraintTop_toBottomOf="@id/vadMinSpeechLabel"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <!-- Control Buttons -->
+        <Button
+            android:id="@+id/startButton"
+            android:layout_width="match_parent"
+            android:layout_height="70dp"
+            android:text="Start Recording"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="8dp"
+            app:layout_constraintTop_toBottomOf="@id/vadMinSpeechEdit"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <Button
+            android:id="@+id/stopButton"
+            android:layout_width="match_parent"
+            android:layout_height="70dp"
+            android:text="Stop Recording"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="16dp"
+            app:layout_constraintTop_toBottomOf="@id/startButton"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <!-- Audio Player -->
+        <include
+            android:id="@+id/audioPlayerLayout"
+            layout="@layout/audio_player"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            app:layout_constraintTop_toBottomOf="@id/stopButton"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <!-- Audio List Header -->
+        <TextView
+            android:id="@+id/audioListHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Recorded Audio Files"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:padding="16dp"
+            android:layout_marginTop="16dp"
+            android:background="#E8F5E8"
+            app:layout_constraintTop_toBottomOf="@id/audioPlayerLayout"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+        <!-- Audio List -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/audioListRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="16dp"
+            app:layout_constraintTop_toBottomOf="@id/audioListHeader"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</ScrollView>
