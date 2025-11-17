@@ -2,7 +2,10 @@ package com.example.sample_app
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.MediaPlayer
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -14,6 +17,8 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.savr_library.AudioRecordingManager
+import com.twilio.audioswitch.AudioDevice
+import com.twilio.audioswitch.AudioSwitch
 import java.io.File
 import java.io.IOException
 
@@ -22,6 +27,8 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
     private var mediaPlayer: MediaPlayer? = null
 
     // UI Components
+    private lateinit var audioDeviceText: TextView
+    private lateinit var speakerToggleButton: Button
     private lateinit var statusText: TextView
     private lateinit var speechIndicator: TextView
     private lateinit var silenceTimeText: TextView
@@ -58,24 +65,34 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
         }
     }
 
+    private lateinit var audioManager: AudioManager
+    private lateinit var audioSwitch: AudioSwitch
+    private var isSpeakerManuallySelected = false
+
     companion object {
         const val REQUEST_RECORD_AUDIO_PERMISSION = 200
+        const val REQUEST_BLUETOOTH_PERMISSION = 201
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         initializeViews()
+        setupAudioSwitch()
         setupVadModeSpinner()
         setupAudioRecordingManager()
         setupClickListeners()
         setupAudioPlayer()
         setupAudioList()
         loadAudioFiles()
+        requestPermissions()
     }
 
     private fun initializeViews() {
+        audioDeviceText = findViewById(R.id.audioDeviceText)
+        speakerToggleButton = findViewById(R.id.speakerToggleButton)
         statusText = findViewById(R.id.statusText)
         speechIndicator = findViewById(R.id.speechIndicator)
         silenceTimeText = findViewById(R.id.silenceTimeText)
@@ -99,6 +116,60 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
         playerStopButton = findViewById(R.id.playerStopButton)
     }
 
+    private fun setupAudioSwitch() {
+        audioSwitch = AudioSwitch(
+            applicationContext,
+            loggingEnabled = true
+        )
+
+        val audioDeviceChangeListener: (List<AudioDevice>, AudioDevice?) -> Unit = { devices, selectedDevice ->
+            runOnUiThread {
+                val bluetoothDevice = devices.find { it is AudioDevice.BluetoothHeadset }
+                if (bluetoothDevice != null && selectedDevice != bluetoothDevice) {
+                    isSpeakerManuallySelected = false
+                    audioSwitch.selectDevice(bluetoothDevice)
+                    return@runOnUiThread
+                }
+                updateAudioDeviceInfo(selectedDevice)
+                updateAudioSource(selectedDevice)
+            }
+        }
+
+        audioSwitch.start(audioDeviceChangeListener)
+        audioSwitch.activate()
+    }
+
+    private fun updateAudioDeviceInfo(selectedDevice: AudioDevice?) {
+        val deviceName = when (selectedDevice) {
+            is AudioDevice.Earpiece -> "Auricular del teléfono"
+            is AudioDevice.BluetoothHeadset -> "Bluetooth: ${selectedDevice.name}"
+            is AudioDevice.WiredHeadset -> "Cascos cableados"
+            is AudioDevice.Speakerphone -> "Speaker"
+            null -> "-"
+        }
+        audioDeviceText.text = "Micrófono: $deviceName | Altavoz: $deviceName"
+        updateSpeakerButtonText(selectedDevice)
+    }
+
+    private fun updateSpeakerButtonText(selectedDevice: AudioDevice?) {
+        if (selectedDevice is AudioDevice.Speakerphone) {
+            speakerToggleButton.text = "Desactivar Speaker"
+        } else {
+            speakerToggleButton.text = "Activar Speaker"
+        }
+    }
+
+    private fun updateAudioSource(selectedDevice: AudioDevice?) {
+        if (::audioRecordingManager.isInitialized) {
+            val wasActive = audioRecordingManager.isVadActive()
+            val audioSource = when (selectedDevice) {
+                is AudioDevice.BluetoothHeadset -> android.media.MediaRecorder.AudioSource.CAMCORDER
+                else -> android.media.MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            }
+            audioRecordingManager.updateAudioSource(audioSource)
+        }
+    }
+
     private fun setupVadModeSpinner() {
         val vadModes = arrayOf("Mode 1 (50% confidence)", "Mode 2 (80% confidence)", "Mode 3 (95% confidence)")
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, vadModes)
@@ -108,6 +179,11 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
     }
 
     private fun setupAudioRecordingManager() {
+        val selectedDevice = if (::audioSwitch.isInitialized) audioSwitch.selectedAudioDevice else null
+        val audioSource = when (selectedDevice) {
+            is AudioDevice.BluetoothHeadset -> android.media.MediaRecorder.AudioSource.CAMCORDER
+            else -> android.media.MediaRecorder.AudioSource.VOICE_COMMUNICATION
+        }
         audioRecordingManager = AudioRecordingManager(
             context = this,
             listener = this,
@@ -116,11 +192,33 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
             vadMinimumSpeechDurationMs = vadMinSpeechEdit.text.toString().toIntOrNull() ?: 30,
             vadMode = (vadModeSpinner.selectedItemPosition + 1).takeIf { vadModeSpinner.selectedItemPosition >= 0 } ?: 2,
             silenceDurationMs = silenceDurationEdit.text.toString().toIntOrNull() ?: 1500,
-            maxRecordingDurationMs = maxDurationEdit.text.toString().toIntOrNull() ?: 60000
+            maxRecordingDurationMs = maxDurationEdit.text.toString().toIntOrNull() ?: 60000,
+            audioSource = audioSource
         )
     }
 
+
     private fun setupClickListeners() {
+        speakerToggleButton.setOnClickListener {
+            val currentDevice = audioSwitch.selectedAudioDevice
+            if (currentDevice is AudioDevice.Speakerphone) {
+                val earpieceDevice = audioSwitch.availableAudioDevices.find { it is AudioDevice.Earpiece }
+                if (earpieceDevice != null) {
+                    audioSwitch.selectDevice(earpieceDevice)
+                    isSpeakerManuallySelected = false
+                } else {
+                    audioSwitch.selectDevice(null)
+                    isSpeakerManuallySelected = false
+                }
+            } else {
+                val speakerDevice = audioSwitch.availableAudioDevices.find { it is AudioDevice.Speakerphone }
+                if (speakerDevice != null) {
+                    audioSwitch.selectDevice(speakerDevice)
+                    isSpeakerManuallySelected = true
+                }
+            }
+        }
+
         startButton.setOnClickListener {
             updateAudioRecordingManager()
             requestAudioPermissions()
@@ -140,8 +238,44 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
         }
     }
 
+    private fun requestPermissions() {
+        val permissions = mutableListOf<String>()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.BLUETOOTH_CONNECT
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.BLUETOOTH
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissions.add(Manifest.permission.BLUETOOTH)
+            }
+        }
+
+        if (permissions.isNotEmpty()) {
+            ActivityCompat.requestPermissions(
+                this,
+                permissions.toTypedArray(),
+                REQUEST_BLUETOOTH_PERMISSION
+            )
+        }
+    }
+
     private fun updateAudioRecordingManager() {
         if (::audioRecordingManager.isInitialized) {
+            val selectedDevice = if (::audioSwitch.isInitialized) audioSwitch.selectedAudioDevice else null
+            val audioSource = when (selectedDevice) {
+                is AudioDevice.BluetoothHeadset -> android.media.MediaRecorder.AudioSource.CAMCORDER
+                else -> android.media.MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            }
+            audioRecordingManager.updateAudioSource(audioSource)
             audioRecordingManager.updateVadMode(vadModeSpinner.selectedItemPosition + 1)
             audioRecordingManager.updateVadMinimumSilenceDurationMs(vadMinSilenceEdit.text.toString().toIntOrNull() ?: 300)
             audioRecordingManager.updateVadMinimumSpeechDurationMs(vadMinSpeechEdit.text.toString().toIntOrNull() ?: 30)
@@ -165,12 +299,19 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
-            runOnUiThread {
-                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    audioRecordingManager.startVadDetection()
-                } else {
-                    Toast.makeText(this@MainActivity, "Permission denied to record audio", Toast.LENGTH_SHORT).show()
+        when (requestCode) {
+            REQUEST_RECORD_AUDIO_PERMISSION -> {
+                runOnUiThread {
+                    if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                        audioRecordingManager.startVadDetection()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Permission denied to record audio", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            REQUEST_BLUETOOTH_PERMISSION -> {
+                if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                    Toast.makeText(this, "Permisos de Bluetooth concedidos", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -377,8 +518,19 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
         return String.format("%02d:%02d", minutes, remainingSeconds)
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::audioRecordingManager.isInitialized && ::audioSwitch.isInitialized) {
+            val selectedDevice = audioSwitch.selectedAudioDevice
+            updateAudioSource(selectedDevice)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        if (::audioSwitch.isInitialized) {
+            audioSwitch.stop()
+        }
         audioRecordingManager.onDestroy()
         progressHandler.removeCallbacks(progressRunnable)
         mediaPlayer?.release()

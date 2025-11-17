@@ -18,10 +18,12 @@ class Recorder(val callback: AudioCallback) {
 
     private var sampleRate: Int = 0
     private var frameSize: Int = 0
+    private var audioSource: Int = MediaRecorder.AudioSource.VOICE_COMMUNICATION
 
-    fun start(sampleRate: Int, frameSize: Int) {
+    fun start(sampleRate: Int, frameSize: Int, audioSource: Int = MediaRecorder.AudioSource.VOICE_COMMUNICATION) {
         this.sampleRate = sampleRate
         this.frameSize = frameSize
+        this.audioSource = audioSource
         stop()
 
         audioRecord = createAudioRecord()
@@ -57,7 +59,7 @@ class Recorder(val callback: AudioCallback) {
             )
 
             val audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                audioSource,
                 sampleRate,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,

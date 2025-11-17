@@ -24,7 +24,8 @@ class AudioRecordingManager(private val context: Context,
                             vadMinimumSpeechDurationMs: Int = 30,
                             vadMode: Int = 2,
                             private var silenceDurationMs: Int = 1500,
-                            private var maxRecordingDurationMs: Int = 60000) : Recorder.AudioCallback {
+                            private var maxRecordingDurationMs: Int = 60000,
+                            private var audioSource: Int = android.media.MediaRecorder.AudioSource.VOICE_COMMUNICATION) : Recorder.AudioCallback {
     private var isRecording: Boolean = false
     private var isVadActive: Boolean = false
     private var currentAudioFile: File? = null
@@ -71,7 +72,7 @@ class AudioRecordingManager(private val context: Context,
             silenceStartTime = 0
             recordingStartTime = System.currentTimeMillis()
 
-            recorder.start(vad.sampleRate.value, vad.frameSize.value)
+            recorder.start(vad.sampleRate.value, vad.frameSize.value, audioSource)
         } catch (e: IOException) {
             listener.onRecordingError("Failed to start VAD detection: ${e.message}")
         }
@@ -319,7 +320,7 @@ class AudioRecordingManager(private val context: Context,
             .build()
 
         if (wasActive) {
-            recorder.start(vad.sampleRate.value, vad.frameSize.value)
+            recorder.start(vad.sampleRate.value, vad.frameSize.value, audioSource)
         }
     }
 
@@ -351,7 +352,7 @@ class AudioRecordingManager(private val context: Context,
             .build()
 
         if (wasActive) {
-            recorder.start(vad.sampleRate.value, vad.frameSize.value)
+            recorder.start(vad.sampleRate.value, vad.frameSize.value, audioSource)
         }
     }
 
@@ -383,7 +384,7 @@ class AudioRecordingManager(private val context: Context,
             .build()
 
         if (wasActive) {
-            recorder.start(vad.sampleRate.value, vad.frameSize.value)
+            recorder.start(vad.sampleRate.value, vad.frameSize.value, audioSource)
         }
     }
 
@@ -397,5 +398,37 @@ class AudioRecordingManager(private val context: Context,
 
     fun updateRecordSpeechOnly(recordOnly: Boolean) {
         recordSpeechOnly = recordOnly
+    }
+
+    fun updateAudioSource(source: Int) {
+        val wasActive = isVadActive
+        val wasRecording = isRecording
+        
+        if (wasRecording && currentAudioFile != null) {
+            saveCurrentRecording()
+            isRecording = false
+            currentAudioFile = null
+            currentFileData.clear()
+        }
+        
+        if (wasActive) {
+            recorder.stop()
+            isVadActive = false
+            hasSpoken = false
+            speechData.clear()
+            silenceStartTime = 0
+        }
+        
+        audioSource = source
+        
+        if (wasActive) {
+            recordingStartTime = System.currentTimeMillis()
+            recorder.start(vad.sampleRate.value, vad.frameSize.value, audioSource)
+            isVadActive = true
+        }
+    }
+
+    fun getAudioSource(): Int {
+        return audioSource
     }
 }

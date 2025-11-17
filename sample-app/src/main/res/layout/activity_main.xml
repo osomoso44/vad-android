@@ -9,6 +9,32 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
+        <!-- Audio Device Info -->
+        <TextView
+            android:id="@+id/audioDeviceText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Micrófono: - | Altavoz: -"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:padding="12dp"
+            android:background="#FFF9C4"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- Speaker Toggle Button -->
+        <Button
+            android:id="@+id/speakerToggleButton"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="Activar Speaker"
+            android:textSize="16sp"
+            android:layout_marginTop="8dp"
+            android:layout_marginHorizontal="16dp"
+            app:layout_constraintTop_toBottomOf="@id/audioDeviceText"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
         <!-- Status Display -->
         <TextView
             android:id="@+id/statusText"
@@ -20,7 +46,8 @@
             android:gravity="center"
             android:padding="16dp"
             android:background="#E3F2FD"
-            app:layout_constraintTop_toTopOf="parent" />
+            android:layout_marginTop="8dp"
+            app:layout_constraintTop_toBottomOf="@id/speakerToggleButton" />
 
         <!-- Speech Detection Indicator -->
         <TextView

@@ -72,4 +72,5 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
 
     implementation(project(":savr-library"))
+    implementation("com.twilio:audioswitch:1.2.4")
 }
