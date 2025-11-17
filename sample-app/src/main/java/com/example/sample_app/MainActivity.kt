@@ -104,7 +104,7 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, vadModes)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         vadModeSpinner.adapter = adapter
-        vadModeSpinner.setSelection(0) // Default to mode 1
+        vadModeSpinner.setSelection(1) // Default to mode 2 (80% confidence)
     }
 
     private fun setupAudioRecordingManager() {
@@ -114,8 +114,8 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
             recordSpeechOnly = recordSpeechOnlySwitch.isChecked,
             vadMinimumSilenceDurationMs = vadMinSilenceEdit.text.toString().toIntOrNull() ?: 300,
             vadMinimumSpeechDurationMs = vadMinSpeechEdit.text.toString().toIntOrNull() ?: 30,
-            vadMode = vadModeSpinner.selectedItemPosition + 1,
-            silenceDurationMs = silenceDurationEdit.text.toString().toIntOrNull() ?: 5000,
+            vadMode = (vadModeSpinner.selectedItemPosition + 1).takeIf { vadModeSpinner.selectedItemPosition >= 0 } ?: 2,
+            silenceDurationMs = silenceDurationEdit.text.toString().toIntOrNull() ?: 1500,
             maxRecordingDurationMs = maxDurationEdit.text.toString().toIntOrNull() ?: 60000
         )
     }
@@ -127,7 +127,7 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
         }
 
         stopButton.setOnClickListener {
-            audioRecordingManager.stopRecording()
+            audioRecordingManager.stopVadDetection()
         }
 
         vadModeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -145,7 +145,7 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
             audioRecordingManager.updateVadMode(vadModeSpinner.selectedItemPosition + 1)
             audioRecordingManager.updateVadMinimumSilenceDurationMs(vadMinSilenceEdit.text.toString().toIntOrNull() ?: 300)
             audioRecordingManager.updateVadMinimumSpeechDurationMs(vadMinSpeechEdit.text.toString().toIntOrNull() ?: 30)
-            audioRecordingManager.updateSilenceDurationMs(silenceDurationEdit.text.toString().toIntOrNull() ?: 5000)
+            audioRecordingManager.updateSilenceDurationMs(silenceDurationEdit.text.toString().toIntOrNull() ?: 1500)
             audioRecordingManager.updateMaxRecordingDurationMs(maxDurationEdit.text.toString().toIntOrNull() ?: 60000)
             audioRecordingManager.updateRecordSpeechOnly(recordSpeechOnlySwitch.isChecked)
         }
@@ -159,8 +159,7 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
                 arrayOf(Manifest.permission.RECORD_AUDIO),
                 REQUEST_RECORD_AUDIO_PERMISSION)
         } else {
-            // Permission has already been granted
-            audioRecordingManager.startRecording()
+            audioRecordingManager.startVadDetection()
         }
     }
 
@@ -169,10 +168,8 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
         if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
             runOnUiThread {
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    // Permission was granted, start recording
-                    audioRecordingManager.startRecording()
+                    audioRecordingManager.startVadDetection()
                 } else {
-                    // Permission denied, inform the user and possibly disable functionality
                     Toast.makeText(this@MainActivity, "Permission denied to record audio", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -181,10 +178,7 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
 
     override fun onRecordingComplete(audioFilePath: String) {
         runOnUiThread {
-            // Reload audio files list
             loadAudioFiles()
-            
-            // Auto-select the newly recorded file
             val newFile = File(audioFilePath)
             val newAudioFile = AudioFile(
                 file = newFile,
@@ -193,11 +187,12 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
                 size = newFile.length()
             )
             selectAudio(newAudioFile)
-            
-            // Auto-play the new recording
-            playAudio()
-            
-            Toast.makeText(this@MainActivity, "Recording complete. Playing audio...", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onNewRecordingStarted(audioFilePath: String) {
+        runOnUiThread {
+            Toast.makeText(this@MainActivity, "New recording started", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -316,6 +311,17 @@ class MainActivity : AppCompatActivity(), AudioRecordingManager.RecordingResultL
     }
 
     private fun playAudio() {
+        val lastFile = audioRecordingManager.getLastRecordedFile()
+        if (lastFile != null && lastFile.exists()) {
+            val lastAudioFile = AudioFile(
+                file = lastFile,
+                name = lastFile.name,
+                path = lastFile.absolutePath,
+                size = lastFile.length()
+            )
+            selectAudio(lastAudioFile)
+        }
+
         mediaPlayer?.let { player ->
             if (!player.isPlaying) {
                 player.start()

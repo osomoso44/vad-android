@@ -19,14 +19,16 @@ import java.nio.ByteOrder
 
 class AudioRecordingManager(private val context: Context,
                             private val listener: RecordingResultListener,
-                            private var recordSpeechOnly: Boolean = false,
+                            private var recordSpeechOnly: Boolean = true,
                             vadMinimumSilenceDurationMs: Int = 300,
                             vadMinimumSpeechDurationMs: Int = 30,
-                            vadMode: Int = 1,
-                            private var silenceDurationMs: Int = 5000,
+                            vadMode: Int = 2,
+                            private var silenceDurationMs: Int = 1500,
                             private var maxRecordingDurationMs: Int = 60000) : Recorder.AudioCallback {
     private var isRecording: Boolean = false
-    private lateinit var audioFile: File
+    private var isVadActive: Boolean = false
+    private var currentAudioFile: File? = null
+    private var lastRecordedFile: File? = null
     private val toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
     private var vad: VadSilero = Vad.builder()
         .setContext(context)
@@ -41,16 +43,18 @@ class AudioRecordingManager(private val context: Context,
     private var hasSpoken: Boolean = false
     private var recordingStartTime: Long = 0
     private val speechData = mutableListOf<Short>()
+    private var currentFileData = mutableListOf<Short>()
 
     interface RecordingResultListener {
         fun onRecordingComplete(audioFilePath: String)
         fun onRecordingError(errorMessage: String)
         fun onStatusUpdate(status: String, isSpeech: Boolean, silenceTime: Long, recordingTime: Long)
+        fun onNewRecordingStarted(audioFilePath: String)
     }
 
     @SuppressLint("MissingPermission")
-    fun startRecording() {
-        if (isRecording) {
+    fun startVadDetection() {
+        if (isVadActive) {
             return
         }
 
@@ -60,23 +64,22 @@ class AudioRecordingManager(private val context: Context,
         }
 
         try {
-            val audioDirectory = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)
-            if (audioDirectory != null) {
-                val fileName = "recording_${System.currentTimeMillis()}.wav"
-                audioFile = File(audioDirectory, fileName)
+            isVadActive = true
+            hasSpoken = false
+            speechData.clear()
+            currentFileData.clear()
+            silenceStartTime = 0
+            recordingStartTime = System.currentTimeMillis()
 
-                isRecording = true
-                hasSpoken = false
-                speechData.clear()
-
-                playBeep()
-                startSilenceDetection()
-            } else {
-                listener.onRecordingError("Failed to access audio directory")
-            }
+            recorder.start(vad.sampleRate.value, vad.frameSize.value)
         } catch (e: IOException) {
-            listener.onRecordingError("Failed to start recording: ${e.message}")
+            listener.onRecordingError("Failed to start VAD detection: ${e.message}")
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun startRecording() {
+        startVadDetection()
     }
 
     private fun startSilenceDetection() {
@@ -85,17 +88,24 @@ class AudioRecordingManager(private val context: Context,
     }
 
     fun stopRecording() {
-        if (!isRecording) {
+        if (!isRecording && !isVadActive) {
             return
         }
 
         try {
+            if (isRecording && currentAudioFile != null) {
+                saveCurrentRecording()
+            }
             isRecording = false
-
+            isVadActive = false
             recorder.stop()
         } catch (e: RuntimeException) {
             listener.onRecordingError("Failed to stop recording: ${e.message}")
         }
+    }
+
+    fun stopVadDetection() {
+        stopRecording()
     }
 
     fun isRecording(): Boolean {
@@ -107,64 +117,117 @@ class AudioRecordingManager(private val context: Context,
     }
 
     override fun onAudio(audioData: ShortArray) {
+        if (!isVadActive) {
+            return
+        }
+
         val totalRecordingTime = System.currentTimeMillis() - recordingStartTime
         val isSpeech = vad.isSpeech(audioData)
 
         if (isSpeech) {
+            if (!isRecording) {
+                startNewRecording()
+            }
             hasSpoken = true
             silenceStartTime = 0
+            currentFileData.addAll(audioData.toList())
             speechData.addAll(audioData.toList())
         } else {
-            if (hasSpoken) {
+            if (isRecording) {
                 if (silenceStartTime == 0L) {
                     silenceStartTime = System.currentTimeMillis()
                 } else {
                     val elapsedTime = System.currentTimeMillis() - silenceStartTime
                     if (elapsedTime >= silenceDurationMs) {
-                        completeRecording()
+                        completeCurrentRecording()
+                    } else {
+                        if (!recordSpeechOnly) {
+                            currentFileData.addAll(audioData.toList())
+                        }
                     }
                 }
-
-                if (!recordSpeechOnly) {
-                    speechData.addAll(audioData.toList())
+            } else {
+                if (!recordSpeechOnly && hasSpoken) {
+                    currentFileData.addAll(audioData.toList())
                 }
             }
         }
 
-        // Update status
-        val currentSilenceTime = if (hasSpoken && silenceStartTime > 0) {
+        val currentSilenceTime = if (isRecording && silenceStartTime > 0) {
             System.currentTimeMillis() - silenceStartTime
         } else 0L
 
         val status = when {
-            !isRecording -> "Stopped"
-            !hasSpoken -> "Listening for speech..."
-            isSpeech -> "Recording speech"
-            else -> "Silence detected (${currentSilenceTime}ms)"
+            !isVadActive -> "Stopped"
+            !isRecording && !hasSpoken -> "Listening for speech..."
+            isRecording && isSpeech -> "Recording speech"
+            isRecording -> "Silence detected (${currentSilenceTime}ms)"
+            else -> "Listening for speech..."
         }
 
         listener.onStatusUpdate(status, isSpeech, currentSilenceTime, totalRecordingTime)
 
-        if (totalRecordingTime >= maxRecordingDurationMs) {
-            completeRecording()
+        if (isRecording && totalRecordingTime >= maxRecordingDurationMs) {
+            completeCurrentRecording()
         }
     }
 
-    private fun completeRecording() {
-        playBeep()
-        stopRecording()
-
-        // Write speech data to the output file
-        val outputStream = RandomAccessFile(audioFile, "rw")
+    private fun startNewRecording() {
         try {
-            writeWavHeader(outputStream, AudioFormat.CHANNEL_IN_MONO, vad.sampleRate.value)
-            outputStream.write(shortArrayToByteArray(speechData.toShortArray()))
-            updateWavHeader(outputStream)
-        } finally {
-            outputStream.close()
+            val audioDirectory = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+            if (audioDirectory != null) {
+                val fileName = "recording_${System.currentTimeMillis()}.wav"
+                currentAudioFile = File(audioDirectory, fileName)
+                currentFileData.clear()
+                isRecording = true
+                hasSpoken = true
+                recordingStartTime = System.currentTimeMillis()
+                silenceStartTime = 0
+
+                listener.onNewRecordingStarted(currentAudioFile!!.absolutePath)
+            }
+        } catch (e: IOException) {
+            listener.onRecordingError("Failed to create new recording file: ${e.message}")
+        }
+    }
+
+    private fun completeCurrentRecording() {
+        if (currentAudioFile != null && currentFileData.isNotEmpty()) {
+            saveCurrentRecording()
+        }
+        isRecording = false
+        currentAudioFile = null
+        currentFileData.clear()
+        silenceStartTime = 0
+    }
+
+    private fun saveCurrentRecording() {
+        if (currentAudioFile == null || currentFileData.isEmpty()) {
+            return
         }
 
-        listener.onRecordingComplete(audioFile.absolutePath)
+        try {
+            val outputStream = RandomAccessFile(currentAudioFile, "rw")
+            try {
+                writeWavHeader(outputStream, AudioFormat.CHANNEL_IN_MONO, vad.sampleRate.value)
+                outputStream.write(shortArrayToByteArray(currentFileData.toShortArray()))
+                updateWavHeader(outputStream)
+                lastRecordedFile = currentAudioFile
+                listener.onRecordingComplete(currentAudioFile!!.absolutePath)
+            } finally {
+                outputStream.close()
+            }
+        } catch (e: IOException) {
+            listener.onRecordingError("Failed to save recording: ${e.message}")
+        }
+    }
+
+    fun getLastRecordedFile(): File? {
+        return lastRecordedFile
+    }
+
+    fun isVadActive(): Boolean {
+        return isVadActive
     }
 
     private fun writeWavHeader(file: RandomAccessFile?, channelConfig: Int, sampleRate: Int) {
@@ -228,41 +291,100 @@ class AudioRecordingManager(private val context: Context,
     fun getVadMinimumSilenceDurationMs(): Int = vad.silenceDurationMs
     fun getVadMinimumSpeechDurationMs(): Int = vad.speechDurationMs
 
-    // Setters for parameters (requires restart to take effect)
     fun updateVadMode(mode: Int) {
+        val wasActive = isVadActive
+        val wasRecording = isRecording
+        val currentSilenceDuration = vad.silenceDurationMs
+        val currentSpeechDuration = vad.speechDurationMs
+
+        if (wasRecording && currentAudioFile != null) {
+            saveCurrentRecording()
+            isRecording = false
+            currentAudioFile = null
+            currentFileData.clear()
+        }
+
+        if (wasActive) {
+            recorder.stop()
+        }
+
         vad.close()
         vad = Vad.builder()
             .setContext(context)
             .setSampleRate(SampleRate.SAMPLE_RATE_16K)
             .setFrameSize(FrameSize.FRAME_SIZE_512)
             .setMode(Mode.entries.find { it.value == mode }!!)
-            .setSilenceDurationMs(vad.silenceDurationMs)
-            .setSpeechDurationMs(vad.speechDurationMs)
+            .setSilenceDurationMs(currentSilenceDuration)
+            .setSpeechDurationMs(currentSpeechDuration)
             .build()
+
+        if (wasActive) {
+            recorder.start(vad.sampleRate.value, vad.frameSize.value)
+        }
     }
 
     fun updateVadMinimumSilenceDurationMs(duration: Int) {
+        val wasActive = isVadActive
+        val wasRecording = isRecording
+        val currentMode = vad.mode.value
+        val currentSpeechDuration = vad.speechDurationMs
+
+        if (wasRecording && currentAudioFile != null) {
+            saveCurrentRecording()
+            isRecording = false
+            currentAudioFile = null
+            currentFileData.clear()
+        }
+
+        if (wasActive) {
+            recorder.stop()
+        }
+
         vad.close()
         vad = Vad.builder()
             .setContext(context)
             .setSampleRate(SampleRate.SAMPLE_RATE_16K)
             .setFrameSize(FrameSize.FRAME_SIZE_512)
-            .setMode(Mode.entries.find { it.value == vad.mode.value }!!)
+            .setMode(Mode.entries.find { it.value == currentMode }!!)
             .setSilenceDurationMs(duration)
-            .setSpeechDurationMs(vad.speechDurationMs)
+            .setSpeechDurationMs(currentSpeechDuration)
             .build()
+
+        if (wasActive) {
+            recorder.start(vad.sampleRate.value, vad.frameSize.value)
+        }
     }
 
     fun updateVadMinimumSpeechDurationMs(duration: Int) {
+        val wasActive = isVadActive
+        val wasRecording = isRecording
+        val currentMode = vad.mode.value
+        val currentSilenceDuration = vad.silenceDurationMs
+
+        if (wasRecording && currentAudioFile != null) {
+            saveCurrentRecording()
+            isRecording = false
+            currentAudioFile = null
+            currentFileData.clear()
+        }
+
+        if (wasActive) {
+            recorder.stop()
+        }
+
         vad.close()
         vad = Vad.builder()
             .setContext(context)
             .setSampleRate(SampleRate.SAMPLE_RATE_16K)
             .setFrameSize(FrameSize.FRAME_SIZE_512)
-            .setMode(Mode.entries.find { it.value == vad.mode.value }!!)
-            .setSilenceDurationMs(vad.silenceDurationMs)
+            .setMode(Mode.entries.find { it.value == currentMode }!!)
+            .setSilenceDurationMs(currentSilenceDuration)
             .setSpeechDurationMs(duration)
             .build()
+
+        if (wasActive) {
+            recorder.start(vad.sampleRate.value, vad.frameSize.value)
+        }
     }
 
     fun updateSilenceDurationMs(duration: Int) {
